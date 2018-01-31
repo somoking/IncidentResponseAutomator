@@ -16,6 +16,7 @@ from datetime import datetime
 from datetime import timedelta  
 import pprint
 
+#Kepner.Ceballos@MolinaHealthCare.Com
 class Artifact:
     def __init__(self,IncidentID=None,Type=None,Value=None,Description=None,Created=None):
         self.IncidentID = IncidentID
@@ -37,6 +38,17 @@ class Artifact:
         return hash((self.IncidentID,self.Type,self.Value))
 
 # Resiliant Section ===========================================================
+class ResiliantDictionary:
+    def __init__(self,ResiliantClient):
+        self.ResiliantClient = ResiliantClient
+        self.conf=ResiliantClient.get_const()
+
+    def ArtifactNameToID(self, Name):
+        for ArtifactType in self.conf["artifact_types"]:
+            if ArtifactType["name"]==Name:
+                return ArtifactType["id"]
+        return Name
+
 def GetOpenArtifacts(ResiliantClient):
     OpenIncidents = ResiliantClient.get("/incidents/open")
     NewArtifacts = []
@@ -59,7 +71,7 @@ def GetOpenArtifacts(ResiliantClient):
             NewArtifacts.append(NewArtifact)
     return (NewArtifacts,LastObject)
 
-def GetNewArtifacts(ResiliantClient,**QueryParameters):
+def GetNewArtifacts(ResiliantClient,Dictionary=None,**QueryParameters):
     LastObject = 0
     GetString="/newsfeed"
     if len(QueryParameters)!=0:
@@ -72,8 +84,11 @@ def GetNewArtifacts(ResiliantClient,**QueryParameters):
     for OpenIncident in OpenIncidents:
         if LastObject<OpenIncident["after"]["created"]:
                 LastObject=OpenIncident["after"]["created"]
+                Type=OpenIncident["after"]["type"]
+                if(Dictionary!=None):
+                    Type=ResiliantDict.ArtifactNameToID(Type)
         NewArtifacts.append(Artifact(OpenIncident["after"]["inc_id"]
-                                     ,OpenIncident["after"]["type"]
+                                     ,Type
                                      ,(OpenIncident["after"]["value"]).lower()
                                      ,OpenIncident["after"]["description"]
                                      ,OpenIncident["timestamp"]))
@@ -89,7 +104,7 @@ def SetArtifact(ResiliantClient,Artifact):
               , "relating" : None
               ,"parent_id": None}
     PostString="/incidents/"+str(Artifact.IncidentID)+"/artifacts"
-    OpenIncidents = ResiliantClient.post(PostString,PostDict)
+    #OpenIncidents = ResiliantClient.post(PostString,PostDict)
 
 def SetNewArtifacts(ResiliantClient,Artifacts):
     print "Populating Data into Resilant"
@@ -122,7 +137,8 @@ def LDAPBind(binddn,password):
         LDAPobject.simple_bind(binddn,password)
         LDAPobject.result4()
      except ldap.INVALID_CREDENTIALS:
-        print "Your username or password is incorrect."
+        print "Error connecting to LDAP: Your username or password is incorrect."
+        raw_input("Program will now exit")
         sys.exit(0)
      except ldap.LDAPError, e:
         if type(e.message) == dict and e.message.has_key('desc'):
@@ -180,8 +196,11 @@ def GetIPAddress(SplunkClient,UsertoIPArtifacts):
     for artifact in UsertoIPArtifacts:
         User=string.replace(artifact.Value, "mmc\\","")
         Datetime=datetime.fromtimestamp((artifact.Created/1000))
-        earliest_time=(Datetime-timedelta(minutes=20)).strftime('%Y-%m-%dT%H:%M:%S.000-9:00')
-        latest_time=(Datetime+timedelta(minutes=20)).strftime('%Y-%m-%dT%H:%M:%S.000-9:00')
+
+        offset = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
+        offset =str(offset/60/60*-1)+":00"
+        earliest_time=(Datetime-timedelta(minutes=40)).strftime('%Y-%m-%dT%H:%M:%S.000')+offset
+        latest_time=(Datetime).strftime('%Y-%m-%dT%H:%M:%S.000')+offset
         SearchArgs = {"earliest_time":earliest_time#"2018-01-03T09:00:00.000-08:00",
                       ,"latest_time": latest_time#"2018-01-23T12:00:00.000-07:00",
                       ,"exec_mode": "blocking"}
@@ -202,8 +221,11 @@ def GetComputerNames(SplunkClient,UsertoIPArtifacts):
     for artifact in UsertoIPArtifacts:
         User=string.replace(artifact.Value, "mmc\\","")
         Datetime=datetime.fromtimestamp((artifact.Created/1000))
-        earliest_time=(Datetime-timedelta(minutes=45)).strftime('%Y-%m-%dT%H:%M:%S.000-9:00')
-        latest_time=(Datetime+timedelta(minutes=45)).strftime('%Y-%m-%dT%H:%M:%S.000-9:00')
+
+        offset = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
+        offset =str(offset/60/60*-1)+":00"
+        earliest_time=(Datetime-timedelta(minutes=130)).strftime('%Y-%m-%dT%H:%M:%S.000')+offset
+        latest_time=(Datetime).strftime('%Y-%m-%dT%H:%M:%S.000')+offset
         SearchArgs = {"earliest_time":earliest_time#"2018-01-03T09:00:00.000-08:00",
                       ,"latest_time": latest_time#"2018-01-23T12:00:00.000-07:00",
                       ,"exec_mode": "blocking"}
@@ -220,12 +242,14 @@ def GetComputerNames(SplunkClient,UsertoIPArtifacts):
 
 #Contains all Artifact populators
 def NewArtifactPopulator(SplunkClient,LDAPObject,OpenArtifacts):
-    print "Data Creation Start --"
+
+    print "Data Creation Start -----"
     Time1=datetime.now()
     print "Data Creation Username"
     NewUserArtifacts=set(GetSameAccountName(LDAPObject,OpenArtifacts))
     Time2=datetime.now()
     print "End Username | ",(Time2-Time1).total_seconds()," Seconds elaspsed"
+
     OldUserArtifacts=set(filter(lambda x: (x.Type==23)and(x.Value!="system"),OpenArtifacts))
     UserArtifactsforSplunk=NewUserArtifacts-OldUserArtifacts | OldUserArtifacts
 
@@ -234,13 +258,16 @@ def NewArtifactPopulator(SplunkClient,LDAPObject,OpenArtifacts):
     NewComputerNameArtifacts=set(GetComputerNames(SplunkClient,UserArtifactsforSplunk))
     Time2=datetime.now()
     print "End ComputerName | ",(Time2-Time1).total_seconds()," Seconds elaspsed"
+
+
     Time1=datetime.now()
     print "Data Creation IP Address"
     NewIPArtifacts=set(GetIPAddress(SplunkClient,UserArtifactsforSplunk))
     Time2=datetime.now()
     print "End IP Address | ",(Time2-Time1).total_seconds()," Seconds elaspsed"
 
-    print "Data Creation End --"
+
+    print "Data Creation End -----"
     return (NewIPArtifacts|NewComputerNameArtifacts|NewUserArtifacts)
 
 #==================================MAIN=======================================
@@ -248,8 +275,8 @@ def NewArtifactPopulator(SplunkClient,LDAPObject,OpenArtifacts):
 print "Start Init" 
 Time1=datetime.now()
 
-TimeToClose=(datetime.now()+timedelta(days=1))
-Filepath = dirname(dirname(os.path.abspath(__file__)))+"\PythonConfig.ini"
+TimeToClose=(datetime.now()+timedelta(hours=1))#+timedelta(days=1))
+Filepath = "C:\Users\sanlesso\Documents\Visual Studio 2015\Projects\PythonApplication1\PythonConfig.ini"
 Config=ConfigParser.SafeConfigParser()
 Config.read(Filepath)
 try:
@@ -266,13 +293,15 @@ try:
     print "Resiliant Connected"
 except ValueError:
     print "Error connecting to Resiliant: "+ValueError.message
-    raw_input("Please Exit Program")
+    raw_input("Program will now exit")
+    sys.exit(0)
 try:
    LDAPObject=LDAPBind(Config.get("LDAP", "binddn"),Config.get("LDAP", "password"))
    print "LDAP Connected"
 except ValueError:
     print "Error connecting to LDAP: "+ValueError.message
-    raw_input("Please Exit Program")
+    raw_input("Program will now exit")
+    sys.exit(0)
 try:
     SplunkClient=client.connect(
      host=Config.get("Splunk", "host"),
@@ -281,7 +310,10 @@ try:
     print "Splunk Connected"
 except ValueError:
     print "Error connecting to Splunk: "+ValueError.message
-    raw_input("Please Exit Program")
+    raw_input("Program will now exit")
+    sys.exit(0)
+
+ResiliantDict=ResiliantDictionary(ResiliantClient)
 
 Time2=datetime.now()
 print "End Init | ",(Time2-Time1).total_seconds()," Seconds elaspsed"
@@ -290,24 +322,20 @@ Time1=datetime.now()
 OpenArtifactsData = GetOpenArtifacts(ResiliantClient)
 LastObject=OpenArtifactsData[1]
 OpenArtifacts=list(filter(lambda x: (x.IncidentID==18978),OpenArtifactsData[0]))#OpenArtifacts=OpenArtifactsData[0]
-
 CreatedArtifacts=NewArtifactPopulator(SplunkClient,LDAPObject,OpenArtifacts)
-
 SetNewArtifacts(ResiliantClient,CreatedArtifacts)
-
 Time2=datetime.now()
 print "End Initial Batch | ",(Time2-Time1).total_seconds()," Seconds elaspsed"
+
 # Monitoring Section ==========================================================
-print "Start Monitoring Section"
+print "Start Monitoring Section================================================"
 while TimeToClose>datetime.now():
     print "Start Monitoring -----",LastObject
     Time1=datetime.now()
     Finalize=(Time1+timedelta(minutes=2))
     QueryParameters={"entry_type":"CREATE","object_type":"ARTIFACT","since_date":str(LastObject)}
-    NewArtifactsData=GetNewArtifacts(ResiliantClient,**QueryParameters)
-    
+    NewArtifactsData=GetNewArtifacts(ResiliantClient,Dictionary=ResiliantDict,**QueryParameters)
     LastObject=NewArtifactsData[1]
-
     NewArtifacts=list(filter(lambda x: (x.IncidentID==18978),NewArtifactsData[0]))#NewArtifacts=set(NewArtifactsData[0])
     if NewArtifacts!=[]:
         CreatedArtifacts=NewArtifactPopulator(SplunkClient,LDAPObject,NewArtifacts)
@@ -317,6 +345,9 @@ while TimeToClose>datetime.now():
         time.sleep(WaitTime)
         Time2=datetime.now()
         print "End Monitoring Batch | ",(Time2-Time1).total_seconds()," Seconds elaspsed"
+print "End Monitoring Section================================================"
+raw_input("++++++++++++++++End++++++++++++++++++")
+
 
 
 
