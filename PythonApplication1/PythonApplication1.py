@@ -16,7 +16,7 @@ from datetime import datetime
 from datetime import timedelta  
 import pprint
 
-#Kepner.Ceballos@MolinaHealthCare.Com
+
 class Artifact:
     def __init__(self,IncidentID=None,Type=None,Value=None,Description=None,Created=None):
         self.IncidentID = IncidentID
