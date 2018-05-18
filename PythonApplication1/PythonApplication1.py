@@ -131,7 +131,7 @@ def SetNewArtifacts(ResiliantClient,Artifacts):
 
 # Ldap Section =================================================================
 def LDAPBind(binddn,password):
-     LDAPobject = ldap.initialize('LDAP://molina.mhc:389')
+     LDAPobject = ldap.initialize('LDAP://m*a.mhc:389')
      try:
         LDAPobject.set_option(ldap.OPT_REFERRALS, 0)
         LDAPobject.simple_bind(binddn,password)
@@ -148,7 +148,7 @@ def LDAPBind(binddn,password):
      return LDAPobject
 
 def LDAPSearch(LDAPobject,searchValue,returnAttribute):
-     basedn = "DC=molina,DC=mhc"
+     basedn = "DC=m*a,DC=mhc"
      searchFilter = searchValue
      searchAttribute = returnAttribute #["samaccountname"]
      searchScope =ldap.SCOPE_SUBTREE
@@ -163,7 +163,7 @@ def LDAPSearch(LDAPobject,searchValue,returnAttribute):
 def GetSameAccountName(LDAPObject,Artifacts):
 
     EmailArtifacts = list(filter(lambda x: (x.Type==9 or x.Type==20) and
-                                 re.search("@molinahealthcare",x.Value,re.IGNORECASE)!=None
+                                 re.search("@m*e",x.Value,re.IGNORECASE)!=None
                                  ,Artifacts))
     NewArtifacts=[]
     returnAttribute=["samaccountname"]
